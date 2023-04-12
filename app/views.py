@@ -5,9 +5,15 @@ Werkzeug Documentation:  https://werkzeug.palletsprojects.com/
 This file creates your application.
 """
 
-from app import app
-from flask import render_template, request, jsonify, send_file
+from app import app, db
+from flask import render_template, request, jsonify, send_file, send_from_directory
 import os
+from werkzeug.utils import secure_filename
+from .forms import MovieForm
+from .models import db, Movies
+from flask_wtf.csrf import generate_csrf
+
+
 
 
 ###
@@ -17,6 +23,74 @@ import os
 @app.route('/')
 def index():
     return jsonify(message="This is the beginning of our API")
+
+@app.route('/api/v1/movies', methods=['POST'])
+def movies():
+    
+    if request.method == 'GET': 
+        movies = db.session.execute(db.select(Movies)).scalars()
+        results = [
+            {
+                'id': movie.id,
+                'title': movie.title,
+                'description': movie.description,
+                'poster': movie.poster
+            } for movie in movies]
+        return jsonify(movies = results)
+    
+    form = MovieForm()
+    if form.validate_on_submit():
+        title = form.title.data
+        description = form.description.data
+        poster = form.poster.data
+        
+        filename = secure_filename(poster.filename)
+        poster.save(os.path.join(app.config['UPLOAD_FOLDER'], filename))
+
+        try:
+            movie = Movies(title, description, filename)
+            db.session.add(movie)
+            db.session.commit()
+
+        except Exception as e:
+            return jsonify(message="Movie could not be added", error=str(e))
+
+
+        Added_response = {
+            'message': 'Movie Successfully added',
+            'title': movie.title,
+            'poster': movie.poster,
+            'description': movie.description
+        }
+        return jsonify(Added_response), 201
+
+    else:
+        return jsonify(message="Movie could not be added", errors=form_errors(form))
+    
+@app.route('/api/v1/movies', methods=['GET'])
+def get_movies():
+    #movies = Movies.query.all()
+    movies = db.session.execute(db.select(Movies)).scalars()
+    results = [
+        {
+            'id': movie.id,
+            'title': movie.title,
+            'description': movie.description,
+            'poster': movie.poster
+        } for movie in movies]
+    return jsonify(movies = results)
+
+@app.route("/api/v1/posters/<filename>")
+def get_image(filename):
+    return send_from_directory(os.path.join(os.getcwd(), app.config['UPLOAD_FOLDER']), filename)
+    
+
+    
+#@app.route('api/v1/movies', methods=['GET'])
+@app.route('/api/v1/csrf-token', methods=['GET'])
+def get_csrf():
+    return jsonify({'csrf_token': generate_csrf()})
+        
 
 
 ###
